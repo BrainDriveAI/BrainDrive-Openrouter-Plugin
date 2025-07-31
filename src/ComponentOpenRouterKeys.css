@@ -1,0 +1,538 @@
+/* OpenRouter API Keys Component Styles */
+
+/* Light theme variables (default) */
+:root {
+	--openrouter-bg-color: #ffffff;
+	--openrouter-text-color: #2c3e50;
+	--openrouter-secondary-text: #6c757d;
+	--openrouter-border-color: #e1e5e9;
+	--openrouter-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+	--openrouter-input-bg: #ffffff;
+	--openrouter-input-border: #e1e5e9;
+	--openrouter-input-text: #2c3e50;
+	--openrouter-display-bg: #f8f9fa;
+	--openrouter-info-bg: #f8f9fa;
+	--openrouter-error-bg: #f8d7da;
+	--openrouter-error-text: #721c24;
+	--openrouter-error-border: #f5c6cb;
+	--openrouter-success-bg: #d4edda;
+	--openrouter-success-text: #155724;
+	--openrouter-success-border: #c3e6cb;
+	--openrouter-button-primary-bg: #007bff;
+	--openrouter-button-primary-hover: #0056b3;
+	--openrouter-button-danger-bg: #dc3545;
+	--openrouter-button-danger-hover: #c82333;
+	--openrouter-button-secondary-bg: #6c757d;
+	--openrouter-button-secondary-hover: #5a6268;
+	--openrouter-button-text: #ffffff;
+	--openrouter-disabled-bg: #6c757d;
+	--openrouter-disabled-text: #6c757d;
+	--openrouter-overlay-bg: rgba(0, 0, 0, 0.5);
+	--openrouter-modal-bg: #ffffff;
+	--openrouter-modal-text: #2c3e50;
+	--openrouter-modal-secondary: #6c757d;
+}
+
+/* Dark theme variables */
+.openrouter-keys-container.dark {
+	--openrouter-bg-color: #1a1a1a;
+	--openrouter-text-color: #e1e5e9;
+	--openrouter-secondary-text: #adb5bd;
+	--openrouter-border-color: #333;
+	--openrouter-card-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	--openrouter-input-bg: #2d2d2d;
+	--openrouter-input-border: #444;
+	--openrouter-input-text: #e1e5e9;
+	--openrouter-display-bg: #2d2d2d;
+	--openrouter-info-bg: #2d2d2d;
+	--openrouter-error-bg: #2d1b1b;
+	--openrouter-error-text: #f8d7da;
+	--openrouter-error-border: #4a2c2c;
+	--openrouter-success-bg: #1b2d1b;
+	--openrouter-success-text: #d4edda;
+	--openrouter-success-border: #2c4a2c;
+	--openrouter-button-primary-bg: #4dabf7;
+	--openrouter-button-primary-hover: #3b8fd9;
+	--openrouter-button-danger-bg: #e74c3c;
+	--openrouter-button-danger-hover: #c0392b;
+	--openrouter-button-secondary-bg: #6c757d;
+	--openrouter-button-secondary-hover: #5a6268;
+	--openrouter-button-text: #ffffff;
+	--openrouter-disabled-bg: #6c757d;
+	--openrouter-disabled-text: #adb5bd;
+	--openrouter-overlay-bg: rgba(0, 0, 0, 0.5);
+	--openrouter-modal-bg: #2d2d2d;
+	--openrouter-modal-text: #e1e5e9;
+	--openrouter-modal-secondary: #adb5bd;
+}
+
+.openrouter-keys-container {
+	padding: 1.5rem;
+	border-radius: 8px;
+	transition: all 0.3s ease;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+	background: var(--openrouter-bg-color);
+	border: 1px solid var(--openrouter-border-color);
+	color: var(--openrouter-text-color);
+}
+
+.openrouter-keys-container {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+		"Ubuntu", "Cantarell", sans-serif;
+	max-width: 800px;
+	margin: 0 auto;
+	padding: 20px;
+	border-radius: 12px;
+	transition: all 0.3s ease;
+	background: var(--openrouter-bg-color);
+	color: var(--openrouter-text-color);
+	border: 1px solid var(--openrouter-border-color);
+	box-shadow: var(--openrouter-card-shadow);
+}
+
+.openrouter-keys-header {
+	margin-bottom: 2rem;
+}
+
+.openrouter-keys-title {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	margin-bottom: 0.5rem;
+}
+
+.openrouter-keys-title h3 {
+	margin: 0;
+	font-size: 1.5rem;
+	font-weight: 600;
+}
+
+.openrouter-keys-icon {
+	width: 24px;
+	height: 24px;
+	color: #007bff;
+}
+
+.openrouter-keys-description {
+	margin: 0;
+	color: var(--openrouter-secondary-text);
+	font-size: 0.95rem;
+	line-height: 1.5;
+}
+
+.openrouter-keys-content {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+}
+
+.api-key-section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+
+.api-key-label {
+	font-weight: 600;
+	font-size: 0.95rem;
+	color: var(--openrouter-text-color);
+}
+
+.api-key-input-container {
+	position: relative;
+	display: flex;
+	align-items: center;
+}
+
+.api-key-input {
+	flex: 1;
+	padding: 0.75rem 1rem;
+	border: 2px solid var(--openrouter-input-border);
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+	transition: all 0.2s ease;
+	background: var(--openrouter-input-bg);
+	color: var(--openrouter-input-text);
+}
+
+.api-key-input:focus {
+	outline: none;
+	border-color: var(--openrouter-button-primary-bg);
+	box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.api-key-input:disabled {
+	background: var(--openrouter-disabled-bg);
+	color: var(--openrouter-disabled-text);
+	cursor: not-allowed;
+}
+
+.visibility-toggle {
+	position: absolute;
+	right: 0.75rem;
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 0.25rem;
+	border-radius: 4px;
+	transition: background-color 0.2s ease;
+	font-size: 1.1rem;
+}
+
+.visibility-toggle:hover {
+	background: rgba(0, 0, 0, 0.05);
+}
+
+.openrouter-keys-container.dark .visibility-toggle:hover {
+	background: rgba(255, 255, 255, 0.1);
+}
+
+.visibility-toggle:disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+.api-key-display {
+	position: relative;
+	display: flex;
+	align-items: center;
+	padding: 0.75rem 1rem;
+	border: 2px solid var(--openrouter-border-color);
+	border-radius: 6px;
+	background: var(--openrouter-display-bg);
+	color: var(--openrouter-secondary-text);
+	font-family: "Monaco", "Menlo", "Ubuntu Mono", monospace;
+	font-size: 0.95rem;
+}
+
+.masked-key {
+	flex: 1;
+	letter-spacing: 0.5px;
+	font-weight: 500;
+}
+
+.key-status {
+	margin-left: 1rem;
+	font-size: 0.85rem;
+	font-weight: 500;
+}
+
+.key-status:contains("✅") {
+	color: #28a745;
+}
+
+.key-status:contains("⚠️") {
+	color: #ffc107;
+}
+
+.api-key-help {
+	margin: 0;
+	font-size: 0.85rem;
+	color: var(--openrouter-secondary-text);
+	line-height: 1.4;
+}
+
+.api-key-link {
+	color: var(--openrouter-button-primary-bg);
+	text-decoration: none;
+	font-weight: 500;
+}
+
+.api-key-link:hover {
+	text-decoration: underline;
+}
+
+.openrouter-keys-actions {
+	display: flex;
+	gap: 1rem;
+	align-items: center;
+}
+
+.save-button {
+	padding: 0.75rem 1.5rem;
+	background: var(--openrouter-button-primary-bg);
+	color: var(--openrouter-button-text);
+	border: none;
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	min-width: 120px;
+}
+
+.save-button:hover:not(:disabled) {
+	background: var(--openrouter-button-primary-hover);
+	transform: translateY(-1px);
+}
+
+.save-button:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+.save-button:disabled {
+	background: var(--openrouter-disabled-bg);
+	cursor: not-allowed;
+	transform: none;
+}
+
+.remove-button {
+	padding: 0.75rem 1.5rem;
+	background: var(--openrouter-button-danger-bg);
+	color: var(--openrouter-button-text);
+	border: none;
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s ease;
+	min-width: 120px;
+}
+
+.remove-button:hover:not(:disabled) {
+	background: var(--openrouter-button-danger-hover);
+	transform: translateY(-1px);
+}
+
+.remove-button:active:not(:disabled) {
+	transform: translateY(0);
+}
+
+.remove-button:disabled {
+	background: var(--openrouter-disabled-bg);
+	cursor: not-allowed;
+	transform: none;
+}
+
+.error-message {
+	padding: 0.75rem 1rem;
+	background: var(--openrouter-error-bg);
+	border: 1px solid var(--openrouter-error-border);
+	border-radius: 6px;
+	color: var(--openrouter-error-text);
+	font-size: 0.9rem;
+	line-height: 1.4;
+}
+
+.success-message {
+	padding: 0.75rem 1rem;
+	background: var(--openrouter-success-bg);
+	border: 1px solid var(--openrouter-success-border);
+	border-radius: 6px;
+	color: var(--openrouter-success-text);
+	font-size: 0.9rem;
+	line-height: 1.4;
+}
+
+.remove-confirmation {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(0, 0, 0, 0.5);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 1000;
+}
+
+.confirmation-content {
+	background: var(--openrouter-modal-bg);
+	border-radius: 8px;
+	padding: 2rem;
+	max-width: 400px;
+	width: 90%;
+	box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.confirmation-content h4 {
+	margin: 0 0 1rem 0;
+	font-size: 1.25rem;
+	font-weight: 600;
+	color: var(--openrouter-button-danger-bg);
+}
+
+.confirmation-content p {
+	margin: 0 0 1.5rem 0;
+	color: var(--openrouter-modal-secondary);
+	line-height: 1.5;
+}
+
+.confirmation-actions {
+	display: flex;
+	gap: 1rem;
+	justify-content: flex-end;
+}
+
+.confirm-button {
+	padding: 0.75rem 1.5rem;
+	background: var(--openrouter-button-danger-bg);
+	color: var(--openrouter-button-text);
+	border: none;
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.confirm-button:hover:not(:disabled) {
+	background: var(--openrouter-button-danger-hover);
+}
+
+.confirm-button:disabled {
+	background: var(--openrouter-disabled-bg);
+	cursor: not-allowed;
+}
+
+.cancel-button {
+	padding: 0.75rem 1.5rem;
+	background: var(--openrouter-button-secondary-bg);
+	color: var(--openrouter-button-text);
+	border: none;
+	border-radius: 6px;
+	font-size: 0.95rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+
+.cancel-button:hover:not(:disabled) {
+	background: var(--openrouter-button-secondary-hover);
+}
+
+.cancel-button:disabled {
+	background: var(--openrouter-disabled-bg);
+	cursor: not-allowed;
+}
+
+.openrouter-keys-info {
+	margin-top: 1rem;
+	padding: 1rem;
+	background: var(--openrouter-info-bg);
+	border-radius: 6px;
+	border-left: 4px solid var(--openrouter-button-primary-bg);
+}
+
+.openrouter-keys-info h4 {
+	margin: 0 0 0.75rem 0;
+	font-size: 1rem;
+	font-weight: 600;
+	color: var(--openrouter-text-color);
+}
+
+.openrouter-keys-info ul {
+	margin: 0;
+	padding-left: 1.25rem;
+	list-style-type: disc;
+	color: var(--openrouter-secondary-text);
+}
+
+.openrouter-keys-info li {
+	margin-bottom: 0.5rem;
+	line-height: 1.4;
+}
+
+.openrouter-keys-info li:last-child {
+	margin-bottom: 0;
+}
+
+/* Loading and error states */
+.loading-overlay {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 40px;
+	color: var(--openrouter-secondary-text);
+	transition: color 0.3s ease;
+}
+
+.spinner {
+	border: 3px solid #f3f3f3;
+	border-top: 3px solid #6366f1;
+	border-radius: 50%;
+	width: 24px;
+	height: 24px;
+	animation: spin 1s linear infinite;
+	margin-right: 12px;
+}
+
+@keyframes spin {
+	0% {
+		transform: rotate(0deg);
+	}
+	100% {
+		transform: rotate(360deg);
+	}
+}
+
+@media (max-width: 768px) {
+	.openrouter-keys-container {
+		padding: 1rem;
+	}
+
+	.openrouter-keys-title h3 {
+		font-size: 1.25rem;
+	}
+
+	.openrouter-keys-actions {
+		flex-direction: column;
+		gap: 0.75rem;
+	}
+
+	.save-button,
+	.remove-button {
+		width: 100%;
+		min-width: auto;
+	}
+
+	.confirmation-actions {
+		flex-direction: column;
+	}
+
+	.confirm-button,
+	.cancel-button {
+		width: 100%;
+	}
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+	.openrouter-keys-container {
+		border: 2px solid var(--openrouter-text-color);
+	}
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+	.openrouter-keys-container,
+	.openrouter-keys-title h3,
+	.openrouter-keys-description,
+	.api-key-label,
+	.api-key-input,
+	.visibility-toggle,
+	.api-key-display,
+	.masked-key,
+	.api-key-help,
+	.save-button,
+	.remove-button,
+	.error-message,
+	.success-message,
+	.confirmation-content,
+	.confirmation-content h4,
+	.confirmation-content p,
+	.confirm-button,
+	.cancel-button,
+	.openrouter-keys-info,
+	.openrouter-keys-info h4,
+	.openrouter-keys-info li,
+	.loading-overlay {
+		transition: none;
+	}
+
+	.spinner {
+		animation: none;
+	}
+}

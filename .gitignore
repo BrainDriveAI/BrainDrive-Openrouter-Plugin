@@ -5,6 +5,7 @@ yarn-debug.log*
 yarn-error.log*
 
 # Build outputs
+.dist/
 dist/
 build/
 
@@ -93,3 +94,8 @@ jspm_packages/
 
 # DynamoDB Local files
 .dynamodb/
+
+*.sh
+*.md
+*.sql
+.env

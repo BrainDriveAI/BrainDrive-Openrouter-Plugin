@@ -6,16 +6,16 @@ This script handles install/update/delete operations for the BrainDrive OpenRout
 using the new multi-user plugin lifecycle management architecture.
 """
 
-import json
-import logging
+import asyncio
 import datetime
+import json
 import os
 import shutil
-import asyncio
 from pathlib import Path
-from typing import Dict, Any, Optional, List
-from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Dict, Any, List
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 import structlog
 
 logger = structlog.get_logger()
@@ -32,7 +32,7 @@ except ImportError:
         current_dir = os.path.dirname(os.path.abspath(__file__))
         backend_path = os.path.join(current_dir, "..", "..", "backend", "app", "plugins")
         backend_path = os.path.abspath(backend_path)
-        
+
         if os.path.exists(backend_path):
             if backend_path not in sys.path:
                 sys.path.insert(0, backend_path)
@@ -43,10 +43,8 @@ except ImportError:
             # In this case, we'll create a minimal implementation
             logger.warning(f"BaseLifecycleManager not found at {backend_path}, using minimal implementation")
             from abc import ABC, abstractmethod
-            from datetime import datetime
-            from pathlib import Path
             from typing import Set
-            
+
             class BaseLifecycleManager(ABC):
                 """Minimal base class for remote installations"""
                 def __init__(self, plugin_slug: str, version: str, shared_storage_path: Path):
@@ -55,38 +53,45 @@ except ImportError:
                     self.shared_path = shared_storage_path
                     self.active_users: Set[str] = set()
                     self.instance_id = f"{plugin_slug}_{version}"
-                    self.created_at = datetime.now()
-                    self.last_used = datetime.now()
-                
+                    self.created_at = datetime.datetime.now()
+                    self.last_used = datetime.datetime.now()
+
                 async def install_for_user(self, user_id: str, db, shared_plugin_path: Path):
                     if user_id in self.active_users:
                         return {'success': False, 'error': 'Plugin already installed for user'}
                     result = await self._perform_user_installation(user_id, db, shared_plugin_path)
                     if result['success']:
                         self.active_users.add(user_id)
-                        self.last_used = datetime.now()
+                        self.last_used = datetime.datetime.now()
                     return result
-                
+
                 async def uninstall_for_user(self, user_id: str, db):
                     if user_id not in self.active_users:
                         return {'success': False, 'error': 'Plugin not installed for user'}
                     result = await self._perform_user_uninstallation(user_id, db)
                     if result['success']:
                         self.active_users.discard(user_id)
-                        self.last_used = datetime.now()
+                        self.last_used = datetime.datetime.now()
                     return result
-                
+
                 @abstractmethod
-                async def get_plugin_metadata(self): pass
+                async def get_plugin_metadata(self):
+                    pass
+
                 @abstractmethod
-                async def get_module_metadata(self): pass
+                async def get_module_metadata(self):
+                    pass
+
                 @abstractmethod
-                async def _perform_user_installation(self, user_id, db, shared_plugin_path): pass
+                async def _perform_user_installation(self, user_id, db, shared_plugin_path):
+                    pass
+
                 @abstractmethod
-                async def _perform_user_uninstallation(self, user_id, db): pass
-            
+                async def _perform_user_uninstallation(self, user_id, db):
+                    pass
+
             logger.info("Using minimal BaseLifecycleManager implementation for remote installation")
-            
+
     except ImportError as e:
         logger.error(f"Failed to import BaseLifecycleManager: {e}")
         raise ImportError("BrainDrive OpenRouter plugin requires the new architecture BaseLifecycleManager")
@@ -94,7 +99,7 @@ except ImportError:
 
 class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
     """Lifecycle manager for BrainDrive OpenRouter plugin using new architecture"""
-    
+
     def __init__(self, plugins_base_dir: str = None):
         """Initialize the lifecycle manager"""
         # Define plugin-specific data
@@ -104,7 +109,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             "version": "1.0.0",
             "type": "frontend",
             "icon": "Key",
-            "category": "AI Settings",
+            "category": "LLM Servers",
             "official": True,
             "author": "BrainDrive Team",
             "compatibility": "1.0.0",
@@ -116,15 +121,15 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             "plugin_slug": "BrainDriveOpenRouter",
             # Update tracking fields (matching plugin model)
             "source_type": "github",
-            "source_url": "https://github.com/BrainDrive/BrainDriveOpenRouter",
-            "update_check_url": "https://api.github.com/repos/BrainDrive/BrainDriveOpenRouter/releases/latest",
+            "source_url": "https://github.com/DJJones66/braindrive-openrouter-plugin",
+            "update_check_url": "https://github.com/DJJones66/braindrive-openrouter-plugin/releases/latest",
             "last_update_check": None,
             "update_available": False,
             "latest_version": None,
             "installation_type": "remote",
             "permissions": ["storage.read", "storage.write", "api.access", "settings.read", "settings.write"]
         }
-        
+
         # Define module data
         self.module_data = [
             {
@@ -132,7 +137,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
                 "display_name": "OpenRouter API Keys",
                 "description": "Configure OpenRouter API key for accessing various AI models from multiple providers",
                 "icon": "Key",
-                "category": "AI Settings",
+                "category": "LLM Servers",
                 "priority": 1,
                 "props": {
                     "title": "OpenRouter API Keys",
@@ -181,10 +186,10 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
                     "defaultWidth": 8,
                     "defaultHeight": 4
                 },
-                "tags": ["openrouter_api_keys_settings", "OpenRouter", "API Keys", "AI Models", "Settings"]
+                "tags": ["settings","openrouter_api_keys_settings", "OpenRouter", "API Keys", "AI Models"]
             }
         ]
-        
+
         # Initialize base class with required parameters
         logger.info(f"BrainDrive OpenRouter: plugins_base_dir - {plugins_base_dir}")
         if plugins_base_dir:
@@ -194,7 +199,22 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
         else:
             # When running from the BrainDriveOpenRouter directory during development,
             # resolve the path to backend/plugins/shared
-            shared_path = Path(__file__).parent.parent.parent / "backend" / "plugins" / "shared" / self.plugin_data['plugin_slug'] / f"v{self.plugin_data['version']}"
+            # Fix: Use absolute path resolution to avoid double nesting
+            current_file = Path(__file__).resolve()
+            # Navigate up to find the backend directory
+            backend_dir = current_file
+            while backend_dir.name != 'backend' and backend_dir.parent != backend_dir:
+                backend_dir = backend_dir.parent
+                if backend_dir.name == 'BrainDrive':
+                    backend_dir = backend_dir / 'backend'
+                    break
+            
+            if backend_dir.name == 'backend':
+                shared_path = backend_dir / "plugins" / "shared" / self.plugin_data['plugin_slug'] / f"v{self.plugin_data['version']}"
+            else:
+                # Fallback to relative path from current file
+                shared_path = Path(__file__).parent.parent.parent / "backend" / "plugins" / "shared" / self.plugin_data['plugin_slug'] / f"v{self.plugin_data['version']}"
+        
         logger.info(f"BrainDrive OpenRouter: shared_path - {shared_path}")
         super().__init__(
             plugin_slug=self.plugin_data['plugin_slug'],
@@ -228,6 +248,15 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             if not settings_result['success']:
                 return settings_result
 
+            # Commit all database changes
+            try:
+                await db.commit()
+                logger.info(f"BrainDrive OpenRouter: Database changes committed successfully")
+            except Exception as commit_error:
+                logger.error(f"BrainDrive OpenRouter: Failed to commit database changes: {commit_error}")
+                await db.rollback()
+                return {'success': False, 'error': f'Failed to commit database changes: {str(commit_error)}'}
+
             logger.info(f"BrainDrive OpenRouter: User installation completed for {user_id}")
             return {
                 'success': True,
@@ -249,7 +278,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             existing_check = await self._check_existing_plugin(user_id, db)
             if not existing_check['exists']:
                 return {'success': False, 'error': 'Plugin not found for user'}
-            
+
             plugin_id = existing_check['plugin_id']
 
             # Delete database records
@@ -259,6 +288,15 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
 
             # Remove settings instance
             settings_result = await self._remove_settings(user_id, db)
+
+            # Commit all database changes
+            try:
+                await db.commit()
+                logger.info(f"BrainDrive OpenRouter: Uninstall changes committed successfully")
+            except Exception as commit_error:
+                logger.error(f"BrainDrive OpenRouter: Failed to commit uninstall changes: {commit_error}")
+                await db.rollback()
+                return {'success': False, 'error': f'Failed to commit uninstall changes: {str(commit_error)}'}
 
             logger.info(f"BrainDrive OpenRouter: User uninstallation completed for {user_id}")
             return {
@@ -280,7 +318,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
         try:
             source_dir = Path(__file__).parent
             copied_files = []
-            
+
             # Define files and directories to exclude
             exclude_patterns = {
                 'node_modules',
@@ -655,6 +693,8 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
     async def _create_settings(self, user_id: str, db: AsyncSession) -> Dict[str, Any]:
         """Create settings definition and instance"""
         try:
+            logger.info(f"Starting settings creation for user {user_id}")
+            
             # Check if settings definition exists
             definition = await db.execute(
                 text("SELECT id FROM settings_definitions WHERE id = :definition_id"),
@@ -664,17 +704,26 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
 
             # Create settings definition if it doesn't exist
             if not definition:
+                logger.info("Settings definition not found, creating new one")
                 definition_data = {
                     'id': 'openrouter_api_keys_settings',
                     'name': 'OpenRouter API Keys Settings',
                     'description': 'Configure OpenRouter API key for accessing various AI models from multiple providers',
-                    'category': 'AI Settings',
+                    'category': 'LLM Servers',
                     'type': 'object',
-                    'default_value': '{}',
+                    'default_value': json.dumps({
+                        "apiKey": "",
+                        "enabled": True,
+                        "baseUrl": "https://openrouter.ai/api/v1",
+                        "defaultModel": "openai/gpt-3.5-turbo",
+                        "modelPreferences": {},
+                        "requestTimeout": 30,
+                        "maxRetries": 3
+                    }),
                     'allowed_scopes': json.dumps(['user']),
                     'validation': json.dumps({}),
                     'is_multiple': False,
-                    'tags': json.dumps(['openrouter_api_keys_settings', 'OpenRouter', 'API Keys', 'AI Models', 'Settings']),
+                    'tags': json.dumps(['openrouter_api_keys_settings', 'OpenRouter', 'API Keys', 'AI Models', 'settings']),
                     'created_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     'updated_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 }
@@ -686,29 +735,60 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
                 (:id, :name, :description, :category, :type, :default_value, :allowed_scopes, :validation, :is_multiple, :tags, :created_at, :updated_at)
                 """)
                 
-                await db.execute(definition_stmt, definition_data)
+                try:
+                    await db.execute(definition_stmt, definition_data)
+                    logger.info("Successfully created settings definition")
+                except Exception as def_error:
+                    logger.error(f"Failed to create settings definition: {def_error}")
+                    # Try to continue anyway in case it's a duplicate key error
+            else:
+                logger.info("Settings definition already exists")
 
             # Create settings instance for user
-            instance_data = {
-                'id': f"openrouter_settings_{user_id}",
-                'name': 'OpenRouter API Keys',
-                'definition_id': 'openrouter_api_keys_settings',
-                'scope': 'user',
-                'user_id': user_id,
-                'value': '{}',
-                'created_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                'updated_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
+            # Check if instance already exists
+            existing_instance = await db.execute(
+                text("SELECT id FROM settings_instances WHERE definition_id = :definition_id AND user_id = :user_id"),
+                {"definition_id": "openrouter_api_keys_settings", "user_id": user_id}
+            )
+            existing_instance = existing_instance.scalar_one_or_none()
             
-            instance_stmt = text("""
-            INSERT INTO settings_instances
-            (id, name, definition_id, scope, user_id, value, created_at, updated_at)
-            VALUES
-            (:id, :name, :definition_id, :scope, :user_id, :value, :created_at, :updated_at)
-            """)
-            
-            await db.execute(instance_stmt, instance_data)
+            if not existing_instance:
+                instance_data = {
+                    'id': f"openrouter_settings_{user_id}",
+                    'name': 'OpenRouter API Keys Settings',  # Match the name format that Settings page expects
+                    'definition_id': 'openrouter_api_keys_settings',
+                    'scope': 'user',
+                    'user_id': user_id,
+                    'value': json.dumps({
+                        "apiKey": "",
+                        "enabled": True,
+                        "baseUrl": "https://openrouter.ai/api/v1",
+                        "defaultModel": "openai/gpt-3.5-turbo",
+                        "modelPreferences": {},
+                        "requestTimeout": 30,
+                        "maxRetries": 3
+                    }),
+                    'created_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    'updated_at': datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }
+                
+                instance_stmt = text("""
+                INSERT INTO settings_instances
+                (id, name, definition_id, scope, user_id, value, created_at, updated_at)
+                VALUES
+                (:id, :name, :definition_id, :scope, :user_id, :value, :created_at, :updated_at)
+                """)
+                
+                try:
+                    await db.execute(instance_stmt, instance_data)
+                    logger.info(f"Successfully created settings instance for user {user_id}")
+                except Exception as inst_error:
+                    logger.error(f"Failed to create settings instance: {inst_error}")
+                    return {'success': False, 'error': f'Failed to create settings instance: {str(inst_error)}'}
+            else:
+                logger.info(f"Settings instance already exists for user {user_id}")
 
+            logger.info(f"Settings creation completed successfully for user {user_id}")
             return {
                 'success': True,
                 'settings_created': ['openrouter_api_keys_settings', f"openrouter_settings_{user_id}"]
@@ -716,6 +796,8 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
 
         except Exception as e:
             logger.error(f"Failed to create settings: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {'success': False, 'error': str(e)}
 
     async def _remove_settings(self, user_id: str, db: AsyncSession) -> Dict[str, Any]:
@@ -791,7 +873,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
                         'plugin_slug': self.plugin_data['plugin_slug'],
                         'plugin_name': self.plugin_data['name']
                     })
-            else:
+                else:
                     logger.error(f"BrainDrive OpenRouter: Database installation failed: {result.get('error')}")
                 
                 return result
@@ -820,7 +902,8 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             else:
                 logger.error(f"BrainDrive OpenRouter: Deletion failed: {result.get('error')}")
             
-                return result
+            return result
+            
         except Exception as e:
             logger.error(f"BrainDrive OpenRouter: Delete plugin failed: {e}")
             return {'success': False, 'error': str(e)}
@@ -851,6 +934,19 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
     def MODULE_DATA(self):
         """Compatibility property for accessing module data"""
         return self.module_data
+    @property
+    def PLUGIN_DATA(self):
+        """Compatibility property for remote installer validation"""
+        return self.plugin_data
+    
+    async def delete_plugin(self, user_id: str, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Delete/uninstall plugin for a specific user.
+        This method is expected by the universal lifecycle manager.
+        """
+        logger.info(f"BrainDrive OpenRouter: delete_plugin called for user {user_id}")
+        # Use the existing uninstall method
+        return await self.uninstall_for_user(user_id, db)
 
 
 # Standalone functions for compatibility with remote installer
@@ -873,9 +969,6 @@ lifecycle_manager = BrainDriveOpenRouterLifecycleManager()
 
 # Test script for development
 if __name__ == "__main__":
-    import sys
-    import asyncio
-    
     async def main():
         print("BrainDrive OpenRouter Plugin Lifecycle Manager - Test Mode")
         print("=" * 50)

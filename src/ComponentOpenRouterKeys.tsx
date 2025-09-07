@@ -1,769 +1,661 @@
-import React from "react";
-import "./ComponentOpenRouterKeys.css";
-import {
-	ComponentOpenRouterKeysProps,
-	ComponentOpenRouterKeysState,
-	Services,
-	ErrorInfo,
-} from "./types";
-import ErrorBoundary from "./components/ErrorBoundary";
-import ErrorDisplay from "./components/ErrorDisplay";
-import {
-	ErrorHandler,
-	PluginError,
-	ServiceError,
-	ValidationError,
-	ErrorStrategy,
-	ErrorSeverity,
-	ErrorUtils,
-} from "./utils/errorHandling";
+import React from 'react';
+import './ComponentOpenRouterKeys.css';
+import { KeyIcon, EyeIcon, EyeOffIcon, SaveIcon, InfoIcon, CheckIcon, ClearIcon } from './icons';
 
-// Key icon component
-const KeyIcon: React.FC = () => (
-	<svg viewBox="0 0 24 24" fill="currentColor">
-		<path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
-	</svg>
-);
+// Minimal service interfaces to align with Service Bridge patterns
+interface ApiService {
+  get: (url: string, options?: any) => Promise<any>;
+  post: (url: string, data: any) => Promise<any>;
+}
 
-/**
- * ComponentOpenRouterKeys - A component that allows users to configure their OpenRouter API key
- * for accessing various AI models from multiple providers through OpenRouter.
- */
+interface ThemeService {
+  getCurrentTheme: () => string;
+  addThemeChangeListener: (callback: (theme: string) => void) => void;
+  removeThemeChangeListener: (callback: (theme: string) => void) => void;
+}
+
+interface SettingsServiceBridge {
+  getSetting: (name: string, context?: { userId?: string; pageId?: string }) => Promise<any>;
+  setSetting: (name: string, value: any, context?: { userId?: string; pageId?: string }) => Promise<void>;
+  registerSettingDefinition?: (definition: any) => Promise<void>;
+  getSettingDefinitions?: (filter?: { category?: string; tags?: string[] }) => Promise<any[]>;
+  subscribe?: (key: string, callback: (value: any) => void) => () => void;
+}
+
+interface ComponentOpenRouterKeysProps {
+  pluginId?: string;
+  moduleId?: string;
+  instanceId?: string;
+  services?: {
+    api?: ApiService;
+    theme?: ThemeService;
+    settings?: SettingsServiceBridge;
+  };
+}
+
+interface ComponentOpenRouterKeysState {
+  apiKey: string;
+  savedApiKey: string;
+  isLoading: boolean;
+  error: string | null;
+  success: string | null;
+  isKeyVisible: boolean;
+  isSaving: boolean;
+  currentTheme: string;
+  showTooltip: boolean;
+  hasUnsavedChanges: boolean;
+  tooltipPosition: { top: number; left: number } | null;
+}
+
+// OpenRouter Settings Configuration
+const OPENROUTER_SETTINGS = {
+  DEFINITION_ID: 'openrouter_api_keys_settings',
+  // Align category naming with other working modules and backend
+  CATEGORY: 'LLM Servers',
+  SCHEMA: {
+    type: 'object',
+    properties: {
+      apiKey: { type: 'string' },
+      enabled: { type: 'boolean' },
+      baseUrl: { type: 'string' },
+      defaultModel: { type: 'string' },
+      modelPreferences: { type: 'object' },
+      requestTimeout: { type: 'number' },
+      maxRetries: { type: 'number' }
+    }
+  },
+  DEFAULT_VALUE: {
+    apiKey: '',
+    enabled: true,
+    baseUrl: 'https://openrouter.ai/api/v1',
+    defaultModel: 'openai/gpt-3.5-turbo',
+    modelPreferences: {},
+    requestTimeout: 30,
+    maxRetries: 3
+  }
+};
+
 class ComponentOpenRouterKeys extends React.Component<
-	ComponentOpenRouterKeysProps,
-	ComponentOpenRouterKeysState
+  ComponentOpenRouterKeysProps,
+  ComponentOpenRouterKeysState
 > {
-	private themeChangeListener: ((theme: string) => void) | null = null;
-	private errorHandler: ErrorHandler;
-	private retryCount: number = 0;
-	private maxRetries: number = 3;
-
-	constructor(props: ComponentOpenRouterKeysProps) {
-		super(props);
-
-		// Initialize error handler with plugin context
-		this.errorHandler = new ErrorHandler(
-			{
-				maxRetries: this.maxRetries,
-				retryDelay: 1000,
-				enableLogging: true,
-				enableReporting: true,
-				userNotification: true,
-				fallbackValues: {
-					plugindata: null,
-					theme: "light",
-					settings: {},
-				},
-			},
-			{
-				component: "ComponentOpenRouterKeys",
-				pluginId: props.pluginId || "BrainDriveOpenRouter",
-				moduleId: props.moduleId || "ComponentOpenRouterKeys",
-			}
-		);
-
-		// Initialize component state
-		this.state = {
-			apiKey: "",
-			isLoading: true,
-			error: "",
-			success: null,
-			currentTheme: "light",
-			isKeyVisible: false,
-			isRemoving: false,
-			showRemoveConfirm: false,
-			hasApiKey: false,
-			keyValid: false,
-			maskedKey: null,
-			lastUpdated: null,
-			settingId: null,
-			currentUserId: null,
-			isInitializing: true,
-			lastError: null,
-			retryAvailable: false,
-		};
-
-		// Bind error handling methods
-		this.handleRetry = this.handleRetry.bind(this);
-		this.handleDismissError = this.handleDismissError.bind(this);
-	}
-
-	async componentDidMount() {
-		await this.errorHandler
-			.safeAsync(
-				async () => {
-					await this.initializeServices();
-					await this.loadInitialData();
-					this.setState({
-						isInitializing: false,
-						error: "",
-						lastError: null,
-						retryAvailable: false,
-					});
-				},
-				undefined,
-				ErrorStrategy.RETRY
-			)
-			.catch((error) => {
-				this.handleComponentError(error, "componentDidMount");
-			});
-	}
-
-	componentWillUnmount() {
-		this.cleanupServices();
-	}
-
-	private handleComponentError = (error: unknown, context: string) => {
-		const normalizedError = ErrorUtils.normalizeError(error);
-		const errorInfo: ErrorInfo = {
-			message: ErrorUtils.getUserMessage(normalizedError),
-			code:
-				normalizedError instanceof PluginError
-					? normalizedError.code
-					: undefined,
-			details:
-				normalizedError instanceof PluginError
-					? normalizedError.details
-					: undefined,
-			timestamp: new Date().toISOString(),
-			stack: normalizedError.stack,
-		};
-
-		this.setState({
-			error: errorInfo.message,
-			lastError: errorInfo,
-			retryAvailable: this.retryCount < this.maxRetries,
-			isLoading: false,
-			isInitializing: false,
-		});
-	};
-
-	private handleRetry = async () => {
-		this.retryCount++;
-		this.setState({
-			error: "",
-			retryAvailable: false,
-			isLoading: true,
-		});
-
-		try {
-			await this.loadInitialData();
-			this.setState({
-				isLoading: false,
-				lastError: null,
-			});
-		} catch (error) {
-			this.handleComponentError(error, "retry");
-		}
-	};
-
-	private handleDismissError = () => {
-		this.setState({
-			error: "",
-			lastError: null,
-			retryAvailable: false,
-		});
-	};
-
-	private async initializeServices(): Promise<void> {
-		try {
-			// Initialize theme service
-			if (this.props.services?.theme) {
-				const theme = this.props.services.theme.getCurrentTheme();
-				this.setState({ currentTheme: theme });
-
-				// Subscribe to theme changes
-				this.themeChangeListener = (newTheme: string) => {
-					this.setState({ currentTheme: newTheme });
-				};
-
-				this.props.services.theme.addThemeChangeListener(
-					this.themeChangeListener
-				);
-			}
-
-			// Get current user ID
-			await this.getCurrentUserId();
-		} catch (error) {
-			throw new ServiceError(
-				"Failed to initialize services",
-				"services",
-				"INIT_ERROR",
-				error
-			);
-		}
-	}
-
-	private cleanupServices(): void {
-		if (this.themeChangeListener && this.props.services?.theme) {
-			this.props.services.theme.removeThemeChangeListener(
-				this.themeChangeListener
-			);
-		}
-	}
-
-	private async loadInitialData(): Promise<void> {
-		if (this.state.currentUserId) {
-			await this.loadKeyStatus();
-		}
-	}
-
-	/**
-	 * Get the current user ID from the API
-	 */
-	async getCurrentUserId() {
-		try {
-			if (this.props.services?.api) {
-				const response = await this.props.services.api.get("/api/v1/auth/me");
-				if (response && response.id) {
-					this.setState({ currentUserId: response.id }, () => {
-						// Load key status after getting user ID
-						this.loadKeyStatus();
-					});
-				} else {
-					this.setState({
-						error: "Failed to get current user ID",
-						isLoading: false,
-					});
-				}
-			} else {
-				this.setState({
-					error: "API service not available",
-					isLoading: false,
-				});
-			}
-		} catch (error) {
-			console.error("Error getting current user ID:", error);
-			this.setState({
-				error: "Failed to get current user ID",
-				isLoading: false,
-			});
-		}
-	}
-
-	/**
-	 * Load OpenRouter API key status from the existing settings endpoint
-	 * The backend now masks sensitive data before sending to frontend
-	 */
-	async loadKeyStatus() {
-		if (!this.props.services?.api || !this.state.currentUserId) {
-			this.setState({
-				error: "API service or user ID not available",
-				isLoading: false,
-			});
-			return;
-		}
-
-		try {
-			const response = await this.props.services.api.get(
-				"/api/v1/settings/instances",
-				{
-					params: {
-						definition_id: "openrouter_api_keys_settings",
-						scope: "user",
-						user_id: this.state.currentUserId,
-					},
-				}
-			);
-
-			let instance = null;
-
-			if (Array.isArray(response) && response.length > 0) {
-				instance = response[0];
-			} else if (
-				response &&
-				typeof response === "object" &&
-				"data" in response
-			) {
-				const data = Array.isArray(response.data)
-					? response.data[0]
-					: response.data;
-				instance = data;
-			} else if (response) {
-				instance = response;
-			}
-
-			if (instance) {
-				// Parse the value if it's a string
-				const value =
-					typeof instance.value === "string"
-						? JSON.parse(instance.value)
-						: instance.value;
-
-				// Extract information from the masked data
-				const apiKey = value?.api_key || "";
-				const hasApiKey = value?._has_key || false;
-				const keyValid = value?._key_valid || false;
-
-				this.setState({
-					hasApiKey,
-					keyValid,
-					maskedKey: apiKey || null,
-					lastUpdated: instance.updated_at || null,
-					settingId: instance.id,
-					isLoading: false,
-				});
-			} else {
-				this.setState({ isLoading: false });
-			}
-		} catch (error) {
-			console.error("Error loading OpenRouter API key status:", error);
-			this.setState({
-				error: this.getErrorMessage(error),
-				isLoading: false,
-			});
-		}
-	}
-
-	/**
-	 * Validate OpenRouter API key format
-	 */
-	validateApiKey(apiKey: string): { isValid: boolean; error?: string } {
-		if (!apiKey.trim()) {
-			return { isValid: false, error: "API key cannot be empty" };
-		}
-
-		// Check if it starts with sk-or-
-		if (!apiKey.startsWith("sk-or-")) {
-			return { isValid: false, error: "API key must start with 'sk-or-'" };
-		}
-
-		// Check minimum length (sk-or- + at least 20 characters)
-		if (apiKey.length < 26) {
-			return { isValid: false, error: "API key appears to be too short" };
-		}
-
-		// Check for common patterns
-		if (
-			apiKey.includes(" ") ||
-			apiKey.includes("\n") ||
-			apiKey.includes("\t")
-		) {
-			return { isValid: false, error: "API key contains invalid characters" };
-		}
-
-		return { isValid: true };
-	}
-
-	/**
-	 * Save OpenRouter API key using the existing settings endpoint
-	 * The backend will handle encryption and storage
-	 */
-	async saveSettings(apiKey: string) {
-		if (!this.props.services?.api || !this.state.currentUserId) {
-			this.setState({ error: "API service or user ID not available" });
-			return;
-		}
-
-		// Validate API key
-		const validation = this.validateApiKey(apiKey);
-		if (!validation.isValid) {
-			this.setState({ error: validation.error || "Invalid API key" });
-			return;
-		}
-
-		try {
-			this.setState({ isLoading: true, error: "", success: null });
-
-			const settingValue = {
-				api_key: apiKey,
-			};
-
-			const settingData: any = {
-				definition_id: "openrouter_api_keys_settings",
-				name: "OpenRouter API Keys",
-				value: JSON.stringify(settingValue),
-				scope: "user",
-				user_id: this.state.currentUserId,
-			};
-
-			if (this.state.settingId) {
-				// Update existing setting - include the ID in the payload
-				settingData.id = this.state.settingId;
-			}
-
-			// Use the existing settings endpoint
-			const response = await this.props.services.api.post(
-				"/api/v1/settings/instances",
-				settingData
-			);
-
-			if (response?.id) {
-				this.setState({ settingId: response.id });
-			}
-
-			this.setState({
-				success: "OpenRouter API key saved successfully!",
-				isLoading: false,
-				apiKey: "", // Clear the input field for security
-			});
-
-			// Refresh the status to get updated masked key
-			await this.loadKeyStatus();
-
-			// Clear success message after 3 seconds
-			setTimeout(() => {
-				this.setState({ success: null });
-			}, 3000);
-		} catch (error) {
-			console.error("Error saving OpenRouter API key settings:", error);
-			this.setState({
-				error: this.getErrorMessage(error),
-				isLoading: false,
-			});
-		}
-	}
-
-	/**
-	 * Remove OpenRouter API key using the existing settings endpoint
-	 */
-	async removeApiKey() {
-		if (!this.props.services?.api || !this.state.currentUserId) {
-			this.setState({ error: "API service or user ID not available" });
-			return;
-		}
-
-		try {
-			this.setState({ isRemoving: true, error: "", success: null });
-
-			const settingValue = {
-				api_key: "",
-			};
-
-			const settingData: any = {
-				definition_id: "openrouter_api_keys_settings",
-				name: "OpenRouter API Keys",
-				value: JSON.stringify(settingValue),
-				scope: "user",
-				user_id: this.state.currentUserId,
-			};
-
-			if (this.state.settingId) {
-				// Update existing setting - include the ID in the payload
-				settingData.id = this.state.settingId;
-			}
-
-			// Use the existing settings endpoint
-			const response = await this.props.services.api.post(
-				"/api/v1/settings/instances",
-				settingData
-			);
-
-			if (response?.id) {
-				this.setState({ settingId: response.id });
-			}
-
-			this.setState({
-				success: "OpenRouter API key removed successfully!",
-				isRemoving: false,
-				showRemoveConfirm: false,
-				hasApiKey: false,
-				keyValid: false,
-				maskedKey: null,
-				lastUpdated: null,
-			});
-
-			// Clear success message after 3 seconds
-			setTimeout(() => {
-				this.setState({ success: null });
-			}, 3000);
-		} catch (error) {
-			console.error("Error removing OpenRouter API key settings:", error);
-			this.setState({
-				error: this.getErrorMessage(error),
-				isRemoving: false,
-			});
-		}
-	}
-
-	/**
-	 * Handle API key input change
-	 */
-	handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-		this.setState({ apiKey: e.target.value, error: "" });
-	};
-
-	/**
-	 * Handle save button click
-	 */
-	handleSave = () => {
-		this.saveSettings(this.state.apiKey);
-	};
-
-	/**
-	 * Handle remove button click
-	 */
-	handleRemove = () => {
-		this.setState({ showRemoveConfirm: true });
-	};
-
-	/**
-	 * Handle remove confirmation
-	 */
-	handleRemoveConfirm = () => {
-		this.removeApiKey();
-	};
-
-	/**
-	 * Handle remove cancellation
-	 */
-	handleRemoveCancel = () => {
-		this.setState({ showRemoveConfirm: false });
-	};
-
-	/**
-	 * Toggle API key visibility (only for input field, not stored key)
-	 */
-	toggleKeyVisibility = () => {
-		this.setState((prevState) => ({ isKeyVisible: !prevState.isKeyVisible }));
-	};
-
-	/**
-	 * Get error message from error object
-	 */
-	getErrorMessage(error: any): string {
-		if (error?.response?.data?.detail) {
-			return error.response.data.detail;
-		} else if (error?.message) {
-			return error.message;
-		} else if (typeof error === "string") {
-			return error;
-		} else {
-			return "An unknown error occurred";
-		}
-	}
-
-	private renderLoading(): JSX.Element {
-		return (
-			<div className="loading-overlay">
-				<div className="spinner"></div>
-				<span>Loading OpenRouter settings...</span>
-			</div>
-		);
-	}
-
-	private renderError(): JSX.Element {
-		return (
-			<ErrorDisplay
-				error={this.state.lastError || this.state.error}
-				onRetry={this.handleRetry}
-				onDismiss={this.handleDismissError}
-				showDetails={true}
-			/>
-		);
-	}
-
-	private renderContent(): JSX.Element {
-		const {
-			apiKey,
-			isLoading,
-			error,
-			success,
-			currentTheme,
-			isKeyVisible,
-			isRemoving,
-			showRemoveConfirm,
-			hasApiKey,
-			keyValid,
-			maskedKey,
-			lastUpdated,
-		} = this.state;
-		const isDarkTheme = currentTheme === "dark";
-
-		return (
-			<div
-				className={`openrouter-keys-container ${
-					isDarkTheme ? "dark" : "light"
-				}`}
-			>
-				<div className="openrouter-keys-header">
-					<div className="openrouter-keys-title">
-						<KeyIcon />
-						<h3>OpenRouter API Keys</h3>
-					</div>
-					<p className="openrouter-keys-description">
-						Configure your OpenRouter API key to access various AI models from
-						multiple providers like OpenAI, Anthropic, Google, and more. Your
-						API key is encrypted and stored securely.
-					</p>
-				</div>
-
-				<div className="openrouter-keys-content">
-					{hasApiKey ? (
-						<div className="api-key-section">
-							<label className="api-key-label">Current API Key</label>
-							<div className="api-key-display">
-								<span className="masked-key">{maskedKey || "sk-or-..."}</span>
-								<span className={`key-status ${keyValid ? "" : "invalid"}`}>
-									{keyValid ? "✅ Valid" : "⚠️ Invalid"}
-								</span>
-							</div>
-							{lastUpdated && (
-								<p className="api-key-help">
-									Last updated: {new Date(lastUpdated).toLocaleString()}
-								</p>
-							)}
-						</div>
-					) : (
-						<div className="api-key-section">
-							<label htmlFor="openrouter-api-key" className="api-key-label">
-								OpenRouter API Key
-							</label>
-							<div className="api-key-input-container">
-								<input
-									id="openrouter-api-key"
-									type={isKeyVisible ? "text" : "password"}
-									value={apiKey}
-									onChange={this.handleApiKeyChange}
-									placeholder="sk-or-..."
-									className="api-key-input"
-									disabled={isLoading}
-								/>
-								<button
-									type="button"
-									onClick={this.toggleKeyVisibility}
-									className="visibility-toggle"
-									disabled={isLoading}
-								>
-									{isKeyVisible ? "👁️" : "👁️‍🗨️"}
-								</button>
-							</div>
-							<p className="api-key-help">
-								Get your API key from{" "}
-								<a
-									href="https://openrouter.ai/keys"
-									target="_blank"
-									rel="noopener noreferrer"
-									className="api-key-link"
-								>
-									OpenRouter Platform (https://openrouter.ai/keys)
-								</a>
-							</p>
-						</div>
-					)}
-
-					{error && <div className="error-message">{error}</div>}
-
-					{success && <div className="success-message">{success}</div>}
-
-					<div className="openrouter-keys-actions">
-						{hasApiKey ? (
-							<>
-								<button
-									onClick={this.handleSave}
-									disabled={isLoading}
-									className="save-button"
-								>
-									{isLoading ? "Saving..." : "Update API Key"}
-								</button>
-								<button
-									onClick={this.handleRemove}
-									disabled={isLoading || isRemoving}
-									className="remove-button"
-								>
-									{isRemoving ? "Removing..." : "Remove API Key"}
-								</button>
-							</>
-						) : (
-							<button
-								onClick={this.handleSave}
-								disabled={isLoading}
-								className="save-button"
-							>
-								{isLoading ? "Saving..." : "Save API Key"}
-							</button>
-						)}
-					</div>
-
-					{showRemoveConfirm && (
-						<div className="remove-confirmation">
-							<div className="confirmation-content">
-								<h4>Remove API Key?</h4>
-								<p>
-									Are you sure you want to remove your OpenRouter API key? This
-									action cannot be undone.
-								</p>
-								<div className="confirmation-actions">
-									<button
-										onClick={this.handleRemoveConfirm}
-										disabled={isRemoving}
-										className="confirm-button"
-									>
-										{isRemoving ? "Removing..." : "Yes, Remove"}
-									</button>
-									<button
-										onClick={this.handleRemoveCancel}
-										disabled={isRemoving}
-										className="cancel-button"
-									>
-										Cancel
-									</button>
-								</div>
-							</div>
-						</div>
-					)}
-
-					<div className="openrouter-keys-info">
-						<h4>How it works:</h4>
-						<ul>
-							<li>Enter your OpenRouter API key above</li>
-							<li>
-								Once saved, you'll be able to access models from multiple
-								providers
-							</li>
-							<li>
-								Your API key is encrypted and stored securely on the server
-							</li>
-							<li>
-								You can use models from OpenAI, Anthropic, Google, Meta, and
-								more
-							</li>
-							<li>You can remove your API key at any time for security</li>
-						</ul>
-
-						<h4>Available Models:</h4>
-						<ul>
-							<li>🤖 OpenAI: GPT-4, GPT-4o, GPT-3.5-turbo</li>
-							<li>🧠 Anthropic: Claude 3.5 Sonnet, Claude 3 Haiku</li>
-							<li>🔍 Google: Gemini Pro, Gemini Flash</li>
-							<li>📱 Meta: Llama 3.1, Code Llama</li>
-							<li>🚀 And many more from various providers</li>
-						</ul>
-
-						<h4>Security Features:</h4>
-						<ul>
-							<li>✅ API key format validation</li>
-							<li>✅ Secure backend storage with encryption</li>
-							<li>✅ Keys masked before sending to frontend</li>
-							<li>✅ Masked display only</li>
-							<li>✅ Easy key removal functionality</li>
-							<li>✅ User-scoped access control</li>
-						</ul>
-					</div>
-				</div>
-			</div>
-		);
-	}
-
-	render(): JSX.Element {
-		return (
-			<ErrorBoundary
-				fallback={
-					<ErrorDisplay
-						error={
-							new PluginError("Component crashed", "ComponentOpenRouterKeys")
-						}
-					/>
-				}
-			>
-				{this.state.isInitializing
-					? this.renderLoading()
-					: this.state.error && !this.state.retryAvailable
-					? this.renderError()
-					: this.renderContent()}
-			</ErrorBoundary>
-		);
-	}
+  private settingsUnsubscribe?: () => void;
+  private themeChangeListener: ((theme: string) => void) | null = null;
+  private infoIconRef = React.createRef<HTMLDivElement>();
+
+  constructor(props: ComponentOpenRouterKeysProps) {
+    super(props);
+    this.state = {
+      apiKey: '',
+      savedApiKey: '',
+      isLoading: true,
+      error: null,
+      success: null,
+      isKeyVisible: false,
+      isSaving: false,
+      currentTheme: 'dark',
+      showTooltip: false,
+      hasUnsavedChanges: false,
+      tooltipPosition: null
+    };
+  }
+
+  async componentDidMount() {
+    console.log('ComponentOpenRouterKeys: Initializing...');
+    this.validateServices();
+    this.initializeThemeService();
+    await this.initializeSettingsDefinition();
+    this.initializeSettingsSubscription();
+    await this.loadApiKeyStatus();
+  }
+
+  componentWillUnmount() {
+    if (this.settingsUnsubscribe) {
+      this.settingsUnsubscribe();
+    }
+    if (this.themeChangeListener && this.props.services?.theme) {
+      this.props.services.theme.removeThemeChangeListener(this.themeChangeListener);
+    }
+  }
+
+  /**
+   * Initialize theme service
+   */
+  private initializeThemeService = () => {
+    if (this.props.services?.theme) {
+      try {
+        const currentTheme = this.props.services.theme.getCurrentTheme();
+        this.setState({ currentTheme });
+        
+        this.themeChangeListener = (newTheme: string) => {
+          this.setState({ currentTheme: newTheme });
+        };
+        
+        this.props.services.theme.addThemeChangeListener(this.themeChangeListener);
+      } catch (error) {
+        console.error('Error initializing theme service:', error);
+      }
+    }
+  };
+
+  /**
+   * Initialize/register the settings definition in the frontend bridge
+   * to ensure setSetting works even on first save.
+   */
+  private initializeSettingsDefinition = async () => {
+    if (!this.props.services?.settings) {
+      console.warn('ComponentOpenRouterKeys: Settings service not available for definition registration');
+      return;
+    }
+
+    try {
+      // If we can list definitions, check first
+      if (this.props.services.settings.getSettingDefinitions) {
+        try {
+          const defs = await this.props.services.settings.getSettingDefinitions({ category: OPENROUTER_SETTINGS.CATEGORY });
+          const exists = Array.isArray(defs) && defs.some((d: any) => d.id === OPENROUTER_SETTINGS.DEFINITION_ID);
+          if (exists) {
+            console.log('ComponentOpenRouterKeys: Setting definition already registered');
+            return;
+          }
+        } catch (e) {
+          console.warn('ComponentOpenRouterKeys: Could not query definitions, will attempt to register anyway');
+        }
+      }
+
+      if (this.props.services.settings.registerSettingDefinition) {
+        await this.props.services.settings.registerSettingDefinition({
+          id: OPENROUTER_SETTINGS.DEFINITION_ID,
+          name: 'OpenRouter API Keys Settings',
+          description: 'Configure OpenRouter API key',
+          category: OPENROUTER_SETTINGS.CATEGORY,
+          type: 'object',
+          default: OPENROUTER_SETTINGS.DEFAULT_VALUE,
+          allowedScopes: ['user'],
+          validation: {},
+          isMultiple: false,
+          tags: ['openrouter_api_keys_settings', 'OpenRouter', 'API Keys', 'AI Models', 'settings']
+        });
+        console.log('ComponentOpenRouterKeys: Registered settings definition');
+      }
+    } catch (error) {
+      console.warn('ComponentOpenRouterKeys: Failed to register settings definition (non-fatal):', error);
+    }
+  };
+
+  /**
+   * Validate that required services are available
+   */
+  private validateServices(): void {
+    if (!this.props.services?.settings) {
+      // Don't block; we'll use API fallback if available
+      console.warn('ComponentOpenRouterKeys: Settings service not available; will use API fallback if present');
+      return;
+    }
+
+    if (typeof this.props.services.settings.getSetting !== 'function') {
+      console.warn('ComponentOpenRouterKeys: getSetting not available; will use API fallback if present');
+    }
+
+    if (typeof this.props.services.settings.setSetting !== 'function') {
+      console.warn('ComponentOpenRouterKeys: setSetting not available; will use API fallback if present');
+    }
+
+    console.log('ComponentOpenRouterKeys: Service validation checked');
+  }
+
+  /**
+   * Initialize settings subscription for real-time updates (optional)
+   */
+  initializeSettingsSubscription() {
+    if (!this.props.services?.settings?.subscribe) {
+      console.log('ComponentOpenRouterKeys: Settings subscription not available (optional)');
+      return;
+    }
+
+    // Subscribe to OpenRouter settings changes
+    this.settingsUnsubscribe = this.props.services.settings.subscribe(
+      OPENROUTER_SETTINGS.DEFINITION_ID,
+      (value: any) => {
+        console.log('OpenRouter settings updated:', value);
+        if (value) {
+          this.processApiKeyData(value);
+        }
+      }
+    );
+  }
+
+  private loadApiKeyStatus = async () => {
+    console.log('ComponentOpenRouterKeys: Loading settings...');
+    this.setState({ isLoading: true, error: null });
+
+    // Prefer API first to ensure we fetch the exact DB instance (and ID)
+    if (this.props.services?.api?.get) {
+      const loaded = await this.loadSettingsFromAPI();
+      if (loaded) return;
+    }
+
+    // Settings service fallback
+    if (this.props.services?.settings?.getSetting) {
+      try {
+        const value = await this.props.services.settings.getSetting(
+          OPENROUTER_SETTINGS.DEFINITION_ID,
+          { userId: 'current' }
+        );
+        console.log('ComponentOpenRouterKeys: Loaded settings value (settings service):', value);
+        if (value) {
+          this.processApiKeyData(value);
+          return;
+        }
+      } catch (error: any) {
+        console.warn('ComponentOpenRouterKeys: Error loading via settings service:', error?.message || error);
+      }
+    }
+
+    // Final fallback to defaults
+    console.log('ComponentOpenRouterKeys: No services available, using defaults');
+    this.setState({
+      isLoading: false,
+      apiKey: '',
+      savedApiKey: ''
+    });
+  };
+
+  private processApiKeyData = (value: any) => {
+    console.log('ComponentOpenRouterKeys: Processing API key data:', value);
+    
+    // Handle different data formats from settings service
+    let apiKeyData = value;
+    
+    if (typeof value === 'string') {
+      try {
+        apiKeyData = JSON.parse(value);
+      } catch (e) {
+        // Treat as raw API key string if not JSON
+        apiKeyData = { ...OPENROUTER_SETTINGS.DEFAULT_VALUE, apiKey: value };
+      }
+    }
+    
+    // Extract the API key
+    const key = apiKeyData?.apiKey || '';
+    
+    console.log('ComponentOpenRouterKeys: Extracted API key:', key ? 'Key present (hidden)' : 'No key');
+    
+    this.setState({
+      apiKey: key,
+      savedApiKey: key,
+      isLoading: false,
+      error: null,
+      hasUnsavedChanges: false
+    });
+  };
+
+  private handleApiKeyChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newKey = e.target.value;
+    this.setState({ 
+      apiKey: newKey,
+      error: null,
+      hasUnsavedChanges: newKey !== this.state.savedApiKey
+    });
+  };
+
+  private validateApiKey = (apiKey: string): { isValid: boolean; error?: string } => {
+    if (apiKey && !apiKey.startsWith('sk-or-')) {
+      return { isValid: false, error: 'API key must start with "sk-or-"' };
+    }
+
+    if (apiKey && apiKey.length < 26) {
+      return { isValid: false, error: 'API key appears to be too short' };
+    }
+
+    return { isValid: true };
+  };
+
+  private saveApiKey = async () => {
+    const { apiKey } = this.state;
+    
+    if (apiKey) {
+      const validation = this.validateApiKey(apiKey);
+      if (!validation.isValid) {
+        this.setState({ error: validation.error || 'Invalid API key' });
+        return;
+      }
+    }
+
+    this.setState({ isSaving: true, error: null, success: null });
+
+    try {
+      const settingValue = {
+        ...OPENROUTER_SETTINGS.DEFAULT_VALUE,
+        apiKey: apiKey.trim(),
+        enabled: !!apiKey
+      };
+
+      // Prefer API save first to update the existing instance instead of creating duplicates
+      if (this.props.services?.api?.post) {
+        await this.saveSettingsToAPI(settingValue);
+        this.setState({
+          success: apiKey ? 'API key saved successfully' : 'API key removed',
+          savedApiKey: apiKey,
+          isSaving: false,
+          hasUnsavedChanges: false
+        });
+        setTimeout(() => this.setState({ success: null }), 3000);
+        return;
+      }
+
+      // Fallback to Settings Service if API unavailable
+      if (this.props.services?.settings?.setSetting) {
+        await this.props.services.settings.setSetting(
+          OPENROUTER_SETTINGS.DEFINITION_ID,
+          settingValue,
+          { userId: 'current' }
+        );
+        this.setState({
+          success: apiKey ? 'API key saved successfully' : 'API key removed',
+          savedApiKey: apiKey,
+          isSaving: false,
+          hasUnsavedChanges: false
+        });
+        setTimeout(() => this.setState({ success: null }), 3000);
+        return;
+      }
+
+      // If neither service is available
+      throw new Error('No available service to save settings');
+    } catch (error) {
+      console.error('Error saving API key:', error);
+      this.setState({
+        error: 'Failed to save API key',
+        isSaving: false,
+      });
+    }
+  };
+
+  private clearApiKey = () => {
+    this.setState({ 
+      apiKey: '',
+      hasUnsavedChanges: this.state.savedApiKey !== ''
+    });
+  };
+
+  /**
+   * API fallback: Load settings directly from backend
+   */
+  private loadSettingsFromAPI = async () => {
+    if (!this.props.services?.api?.get) {
+      this.setState({ isLoading: false });
+      return false;
+    }
+
+    try {
+      // Try to find existing instance (try both 'user' and 'USER')
+      const queryParamsBase = {
+        definition_id: OPENROUTER_SETTINGS.DEFINITION_ID,
+        user_id: 'current'
+      } as any;
+
+      const tryScopes = async (scopes: string[]) => {
+        for (const s of scopes) {
+          const resp = await this.props.services!.api!.get('/api/v1/settings/instances', {
+            params: { ...queryParamsBase, scope: s }
+          });
+          if (Array.isArray(resp) && resp.length > 0) return resp;
+          if (resp?.data) {
+            const data = Array.isArray(resp.data) ? resp.data : [resp.data];
+            if (data.length > 0) return data;
+          }
+        }
+        return null;
+      };
+
+      const response = await tryScopes(['user', 'USER']);
+
+      let instance: any = null;
+      if (Array.isArray(response) && response.length > 0) {
+        instance = response[0];
+      }
+
+      if (instance && (instance.value !== undefined)) {
+        let parsed: any = instance.value;
+        if (typeof instance.value === 'string') {
+          try {
+            parsed = JSON.parse(instance.value);
+          } catch (e) {
+            parsed = { ...OPENROUTER_SETTINGS.DEFAULT_VALUE, apiKey: instance.value };
+          }
+        }
+        this.processApiKeyData(parsed);
+        return true;
+      } else {
+        this.setState({ isLoading: false, apiKey: '', savedApiKey: '' });
+        return false;
+      }
+    } catch (error: any) {
+      console.warn('ComponentOpenRouterKeys: Error loading via API fallback:', error?.message || error);
+      this.setState({ isLoading: false, apiKey: '', savedApiKey: '' });
+      return false;
+    }
+  };
+
+  /**
+   * API fallback: Save settings directly to backend
+   */
+  private saveSettingsToAPI = async (value: any) => {
+    if (!this.props.services?.api?.post) return;
+    try {
+      // First locate an existing instance (try both lowercase and uppercase scopes)
+      let existingId: string | null = null;
+      let existingScope: string | null = null;
+      try {
+        const findResp = await this.props.services!.api!.get('/api/v1/settings/instances', {
+          params: {
+            definition_id: OPENROUTER_SETTINGS.DEFINITION_ID,
+            user_id: 'current',
+            scope: 'user'
+          }
+        });
+        let instance: any = null;
+        if (Array.isArray(findResp) && findResp.length > 0) instance = findResp[0];
+        else if (findResp?.data) instance = Array.isArray(findResp.data) ? findResp.data[0] : findResp.data;
+        if (!instance) {
+          const findRespUpper = await this.props.services!.api!.get('/api/v1/settings/instances', {
+            params: {
+              definition_id: OPENROUTER_SETTINGS.DEFINITION_ID,
+              user_id: 'current',
+              scope: 'USER'
+            }
+          });
+          if (Array.isArray(findRespUpper) && findRespUpper.length > 0) instance = findRespUpper[0];
+          else if (findRespUpper?.data) instance = Array.isArray(findRespUpper.data) ? findRespUpper.data[0] : findRespUpper.data;
+        }
+        if (instance && instance.id) {
+          existingId = instance.id;
+          existingScope = instance.scope || 'user';
+        }
+      } catch (findErr) {
+        console.warn('ComponentOpenRouterKeys: Could not query existing instance before save:', findErr);
+      }
+
+      const payload: any = {
+        definition_id: OPENROUTER_SETTINGS.DEFINITION_ID,
+        name: 'OpenRouter API Keys Settings',
+        value,
+        scope: existingScope || 'user',
+        user_id: 'current'
+      };
+      if (existingId) payload.id = existingId;
+
+      await this.props.services.api.post('/api/v1/settings/instances', payload);
+    } catch (error) {
+      console.error('ComponentOpenRouterKeys: Error saving via API fallback:', error);
+      throw error;
+    }
+  };
+
+  private handleTooltipShow = () => {
+    if (this.infoIconRef.current) {
+      const rect = this.infoIconRef.current.getBoundingClientRect();
+      this.setState({
+        showTooltip: true,
+        tooltipPosition: {
+          top: rect.bottom + 8,
+          left: rect.left
+        }
+      });
+    }
+  };
+
+  private handleTooltipHide = () => {
+    this.setState({
+      showTooltip: false,
+      tooltipPosition: null
+    });
+  };
+
+  render() {
+    const {
+      apiKey,
+      savedApiKey,
+      isLoading,
+      error,
+      success,
+      isKeyVisible,
+      isSaving,
+      currentTheme,
+      showTooltip,
+      hasUnsavedChanges,
+      tooltipPosition
+    } = this.state;
+
+    if (isLoading) {
+      return (
+        <div className={`openrouter-container ${currentTheme}-theme`}>
+          <div className="openrouter-loading">
+            <div className="openrouter-spinner"></div>
+            <span>Loading settings...</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={`openrouter-container ${currentTheme}-theme`}>
+        <div className="openrouter-setting-card">
+          <div className="openrouter-card-content">
+            <div className="openrouter-card-left">
+              <div className="openrouter-card-icon">
+                <KeyIcon />
+              </div>
+              <div className="openrouter-card-text">
+                <div className="openrouter-card-title">
+                  <span>OpenRouter API Key</span>
+                  <div
+                    ref={this.infoIconRef}
+                    className="openrouter-info-icon"
+                    onMouseEnter={this.handleTooltipShow}
+                    onMouseLeave={this.handleTooltipHide}
+                  >
+                    <InfoIcon />
+                  </div>
+                  {showTooltip && tooltipPosition && (
+                    <div
+                      className="openrouter-tooltip"
+                      style={{
+                        top: `${tooltipPosition.top}px`,
+                        left: `${tooltipPosition.left}px`
+                      }}
+                    >
+                      <div className="openrouter-tooltip-content">
+                        <strong>How to get an API key</strong>
+                        {`Visit OpenRouter.ai
+Sign up or log in to your account
+Navigate to the API Keys section
+Create a new API key
+Copy the key and paste it here`}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="openrouter-card-description">
+                  Configure your API key to access AI models
+                </div>
+              </div>
+            </div>
+
+            <div className="openrouter-card-right">
+              <div className="openrouter-input-group">
+                <input
+                  type={isKeyVisible ? 'text' : 'password'}
+                  value={apiKey}
+                  onChange={this.handleApiKeyChange}
+                  placeholder="sk-or-..."
+                  className="openrouter-input"
+                  disabled={isSaving}
+                />
+                
+                <button
+                  type="button"
+                  className="openrouter-icon-btn"
+                  onClick={() => this.setState({ isKeyVisible: !isKeyVisible })}
+                  disabled={isSaving}
+                  aria-label={isKeyVisible ? 'Hide API key' : 'Show API key'}
+                >
+                  {isKeyVisible ? <EyeOffIcon /> : <EyeIcon />}
+                </button>
+
+                {apiKey && (
+                  <button
+                    type="button"
+                    className="openrouter-icon-btn"
+                    onClick={this.clearApiKey}
+                    disabled={isSaving}
+                    aria-label="Clear API key"
+                  >
+                    <ClearIcon />
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className={`openrouter-icon-btn openrouter-save-btn ${hasUnsavedChanges ? 'has-changes' : ''}`}
+                  onClick={this.saveApiKey}
+                  disabled={isSaving || !hasUnsavedChanges}
+                  aria-label="Save API key"
+                >
+                  {isSaving ? (
+                    <div className="openrouter-mini-spinner"></div>
+                  ) : (
+                    <SaveIcon />
+                  )}
+                </button>
+              </div>
+
+              {savedApiKey && !hasUnsavedChanges && (
+                <div className="openrouter-status">
+                  <CheckIcon />
+                  <span>Active</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {error && (
+          <div className="openrouter-alert error">
+            <span>{error}</span>
+          </div>
+        )}
+
+        {success && (
+          <div className="openrouter-alert success">
+            <CheckIcon />
+            <span>{success}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
 }
 
 export default ComponentOpenRouterKeys;

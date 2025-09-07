@@ -1,13 +1,7 @@
-import * as React from "react";
-import * as ReactDOM from "react-dom";
+// Bootstrap file for module federation
+// This ensures React is loaded before the component
 
-// Initialize React
-declare global {
-	interface Window {
-		React: typeof React;
-		ReactDOM: typeof ReactDOM;
-	}
-}
+import ComponentOpenRouterKeys from "./ComponentOpenRouterKeys";
 
-window.React = React;
-window.ReactDOM = ReactDOM;
+export default ComponentOpenRouterKeys;
+export { ComponentOpenRouterKeys };

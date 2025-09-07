@@ -5,19 +5,16 @@ const deps = require("./package.json").dependencies;
 
 module.exports = {
 	mode: "development",
-	entry: "./src/bootstrap",
+	entry: "./src/index",
 	output: {
-		// path: path.resolve(__dirname, "dist"),
-		path: path.resolve(
-			__dirname,
-			"../../backend/plugins/775b61e5112a4c63aace0a1ac438c172/BrainDriveOpenRouter/frontend/dist"
-		),
+		path: path.resolve(__dirname,"../../backend/plugins/shared/BrainDriveOpenRouter/v1.0.0/dist"),
+		//path: path.resolve(__dirname,"dist"),
 		publicPath: "auto",
 		clean: true,
 		library: {
-			type: "var",
-			name: "BrainDriveOpenRouter",
-		},
+			type: 'var',
+			name: 'BrainDriveOpenRouter'
+		}
 	},
 	resolve: {
 		extensions: [".tsx", ".ts", ".js"],
@@ -31,8 +28,12 @@ module.exports = {
 			},
 			{
 				test: /\.css$/,
-				use: ["style-loader", "css-loader", "postcss-loader"],
-			},
+				use: [
+					'style-loader', 
+					'css-loader',
+					'postcss-loader'
+				]
+			}
 		],
 	},
 	plugins: [
@@ -44,17 +45,17 @@ module.exports = {
 				"./ComponentOpenRouterKeys": "./src/ComponentOpenRouterKeys",
 			},
 			shared: {
-				react: {
+				react: { 
 					singleton: true,
 					requiredVersion: deps.react,
-					eager: true,
+					eager: true
 				},
-				"react-dom": {
+				"react-dom": { 
 					singleton: true,
 					requiredVersion: deps["react-dom"],
-					eager: true,
-				},
-			},
+					eager: true
+				}
+			}
 		}),
 		new HtmlWebpackPlugin({
 			template: "./public/index.html",

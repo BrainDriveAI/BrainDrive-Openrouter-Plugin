@@ -106,7 +106,7 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
         self.plugin_data = {
             "name": "BrainDrive OpenRouter",
             "description": "OpenRouter API Key Management Plugin for accessing various AI models from multiple providers",
-            "version": "1.0.0",
+            "version": "1.0.1",
             "type": "frontend",
             "icon": "Key",
             "category": "LLM Servers",

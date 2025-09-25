@@ -121,8 +121,8 @@ class BrainDriveOpenRouterLifecycleManager(BaseLifecycleManager):
             "plugin_slug": "BrainDriveOpenRouter",
             # Update tracking fields (matching plugin model)
             "source_type": "github",
-            "source_url": "https://github.com/DJJones66/braindrive-openrouter-plugin",
-            "update_check_url": "https://github.com/DJJones66/braindrive-openrouter-plugin/releases/latest",
+            "source_url": "https://github.com/BrainDriveAI/BrainDrive-Openrouter-Plugin",
+            "update_check_url": "https://github.com/BrainDriveAI/BrainDrive-Openrouter-Plugin/releases/latest",
             "last_update_check": None,
             "update_available": False,
             "latest_version": None,

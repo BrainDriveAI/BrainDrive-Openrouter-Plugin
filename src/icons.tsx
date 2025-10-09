@@ -48,3 +48,10 @@ export const ClearIcon: React.FC<{ className?: string }> = ({ className }) => (
     <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
   </svg>
 );
+
+// Test Connection Icon
+export const TestConnectionIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+    <path d="M12 2a10 10 0 0 0-8.94 5.66l1.8.86A8 8 0 0 1 12 4a8 8 0 0 1 7.14 4.52l1.8-.86A10 10 0 0 0 12 2zm-1.46 6.12L6 14h4v6l5.54-5.88H12v-6z" />
+  </svg>
+);

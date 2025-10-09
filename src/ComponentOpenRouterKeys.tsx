@@ -1,6 +1,6 @@
 import React from 'react';
 import './ComponentOpenRouterKeys.css';
-import { KeyIcon, EyeIcon, EyeOffIcon, SaveIcon, InfoIcon, CheckIcon, ClearIcon } from './icons';
+import { KeyIcon, EyeIcon, EyeOffIcon, SaveIcon, InfoIcon, CheckIcon, ClearIcon, TestConnectionIcon } from './icons';
 
 // Minimal service interfaces to align with Service Bridge patterns
 interface ApiService {
@@ -39,8 +39,11 @@ interface ComponentOpenRouterKeysState {
   isLoading: boolean;
   error: string | null;
   success: string | null;
+  testResult: string | null;
+  testError: string | null;
   isKeyVisible: boolean;
   isSaving: boolean;
+  isTesting: boolean;
   currentTheme: string;
   showTooltip: boolean;
   hasUnsavedChanges: boolean;
@@ -91,8 +94,11 @@ class ComponentOpenRouterKeys extends React.Component<
       isLoading: true,
       error: null,
       success: null,
+      testResult: null,
+      testError: null,
       isKeyVisible: false,
       isSaving: false,
+      isTesting: false,
       currentTheme: 'dark',
       showTooltip: false,
       hasUnsavedChanges: false,
@@ -286,6 +292,8 @@ class ComponentOpenRouterKeys extends React.Component<
       savedApiKey: key,
       isLoading: false,
       error: null,
+      testResult: null,
+      testError: null,
       hasUnsavedChanges: false
     });
   };
@@ -295,6 +303,8 @@ class ComponentOpenRouterKeys extends React.Component<
     this.setState({ 
       apiKey: newKey,
       error: null,
+      testResult: null,
+      testError: null,
       hasUnsavedChanges: newKey !== this.state.savedApiKey
     });
   };
@@ -338,7 +348,9 @@ class ComponentOpenRouterKeys extends React.Component<
           success: apiKey ? 'API key saved successfully' : 'API key removed',
           savedApiKey: apiKey,
           isSaving: false,
-          hasUnsavedChanges: false
+          hasUnsavedChanges: false,
+          testResult: null,
+          testError: null
         });
         setTimeout(() => this.setState({ success: null }), 3000);
         return;
@@ -355,7 +367,9 @@ class ComponentOpenRouterKeys extends React.Component<
           success: apiKey ? 'API key saved successfully' : 'API key removed',
           savedApiKey: apiKey,
           isSaving: false,
-          hasUnsavedChanges: false
+          hasUnsavedChanges: false,
+          testResult: null,
+          testError: null
         });
         setTimeout(() => this.setState({ success: null }), 3000);
         return;
@@ -368,13 +382,93 @@ class ComponentOpenRouterKeys extends React.Component<
       this.setState({
         error: 'Failed to save API key',
         isSaving: false,
+        testResult: null,
+        testError: null
       });
+    }
+  };
+
+  private handleTestConnection = async () => {
+    if (this.state.isTesting || this.state.isSaving) {
+      return;
+    }
+
+    if (!this.props.services?.api?.get) {
+      this.setState({
+        testError: 'API service unavailable. Unable to call test endpoint.',
+        testResult: null
+      });
+      return;
+    }
+
+    if (!this.state.savedApiKey) {
+      this.setState({
+        testError: 'Save a valid OpenRouter API key before testing the connection.',
+        testResult: null
+      });
+      return;
+    }
+
+    if (this.state.hasUnsavedChanges) {
+      this.setState({
+        testError: 'Please save your changes before testing the connection.',
+        testResult: null
+      });
+      return;
+    }
+
+    this.setState({
+      isTesting: true,
+      testError: null,
+      testResult: null,
+      success: null,
+      error: null
+    });
+
+    try {
+      const response = await this.props.services.api.get('/api/v1/ai/providers/models', {
+        params: {
+          provider: 'openrouter',
+          settings_id: OPENROUTER_SETTINGS.DEFINITION_ID,
+          server_id: 'openrouter_default_server',
+          user_id: 'current'
+        }
+      });
+
+      const rawModels = Array.isArray(response)
+        ? response
+        : (response?.models
+          || response?.data?.models
+          || []);
+
+      const models = Array.isArray(rawModels) ? rawModels : [];
+      const count = models.length;
+      const preview = models.slice(0, 3).map((model: any) => model?.name || model?.id || 'unknown');
+      const previewText = preview.length > 0
+        ? ` (${preview.join(', ')}${count > preview.length ? '…' : ''})`
+        : '';
+      const message = `Connection successful • ${count} model${count === 1 ? '' : 's'} available${previewText}`;
+
+      this.setState({ testResult: message });
+      setTimeout(() => {
+        this.setState(prev => prev.testResult === message ? { testResult: null } : null);
+      }, 4000);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail || err?.message || 'Failed to test connection';
+      this.setState({
+        testError: typeof detail === 'string' ? detail : 'Failed to test connection',
+        testResult: null
+      });
+    } finally {
+      this.setState({ isTesting: false });
     }
   };
 
   private clearApiKey = () => {
     this.setState({ 
       apiKey: '',
+      testResult: null,
+      testError: null,
       hasUnsavedChanges: this.state.savedApiKey !== ''
     });
   };
@@ -428,12 +522,12 @@ class ComponentOpenRouterKeys extends React.Component<
         this.processApiKeyData(parsed);
         return true;
       } else {
-        this.setState({ isLoading: false, apiKey: '', savedApiKey: '' });
+        this.setState({ isLoading: false, apiKey: '', savedApiKey: '', testResult: null, testError: null });
         return false;
       }
     } catch (error: any) {
       console.warn('ComponentOpenRouterKeys: Error loading via API fallback:', error?.message || error);
-      this.setState({ isLoading: false, apiKey: '', savedApiKey: '' });
+      this.setState({ isLoading: false, apiKey: '', savedApiKey: '', testResult: null, testError: null });
       return false;
     }
   };
@@ -520,13 +614,20 @@ class ComponentOpenRouterKeys extends React.Component<
       isLoading,
       error,
       success,
+      testResult,
+      testError,
       isKeyVisible,
       isSaving,
+      isTesting,
       currentTheme,
       showTooltip,
       hasUnsavedChanges,
       tooltipPosition
     } = this.state;
+
+    const canTestConnection = !!this.props.services?.api?.get;
+    const combinedError = error || testError;
+    const combinedSuccess = testResult || success;
 
     if (isLoading) {
       return (
@@ -618,6 +719,20 @@ Copy the key and paste it here`}
 
                 <button
                   type="button"
+                  className="openrouter-icon-btn"
+                  onClick={this.handleTestConnection}
+                  disabled={isSaving || isTesting || !savedApiKey || !canTestConnection}
+                  aria-label="Test OpenRouter connection"
+                >
+                  {isTesting ? (
+                    <div className="openrouter-mini-spinner"></div>
+                  ) : (
+                    <TestConnectionIcon />
+                  )}
+                </button>
+
+                <button
+                  type="button"
                   className={`openrouter-icon-btn openrouter-save-btn ${hasUnsavedChanges ? 'has-changes' : ''}`}
                   onClick={this.saveApiKey}
                   disabled={isSaving || !hasUnsavedChanges}
@@ -641,16 +756,16 @@ Copy the key and paste it here`}
           </div>
         </div>
 
-        {error && (
+        {combinedError && (
           <div className="openrouter-alert error">
-            <span>{error}</span>
+            <span>{combinedError}</span>
           </div>
         )}
 
-        {success && (
+        {combinedSuccess && (
           <div className="openrouter-alert success">
             <CheckIcon />
-            <span>{success}</span>
+            <span>{combinedSuccess}</span>
           </div>
         )}
       </div>

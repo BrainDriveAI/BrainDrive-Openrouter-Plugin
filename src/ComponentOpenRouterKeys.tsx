@@ -1,6 +1,7 @@
 import React from 'react';
 import './ComponentOpenRouterKeys.css';
 import { KeyIcon, EyeIcon, EyeOffIcon, SaveIcon, InfoIcon, CheckIcon, ClearIcon, TestConnectionIcon } from './icons';
+import { ShieldIcon, BeakerIcon } from './icons/TabIcons';
 import { ModelSelector } from './components/ModelSelector';
 import { ModelTester } from './components/ModelTester';
 import { TestResults } from './components/TestResults';
@@ -1118,7 +1119,10 @@ Copy the key and paste it here`}
             className={`openrouter-tab ${activeTab === 'api-key' ? 'active' : ''}`}
             onClick={() => this.handleTabChange('api-key')}
           >
-            API Key Setup
+            <span className="openrouter-tab-icon">
+              <ShieldIcon />
+            </span>
+            <span>API Key Setup</span>
           </button>
           <button
             type="button"
@@ -1131,7 +1135,10 @@ Copy the key and paste it here`}
             onClick={() => this.handleTabChange('model-testing')}
             disabled={!savedApiKey}
           >
-            Model Testing
+            <span className="openrouter-tab-icon">
+              <BeakerIcon />
+            </span>
+            <span>Model Testing</span>
           </button>
         </div>
         <div className="openrouter-tab-content">

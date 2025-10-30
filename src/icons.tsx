@@ -55,3 +55,5 @@ export const TestConnectionIcon: React.FC<{ className?: string }> = ({ className
     <path d="M12 2a10 10 0 0 0-8.94 5.66l1.8.86A8 8 0 0 1 12 4a8 8 0 0 1 7.14 4.52l1.8-.86A10 10 0 0 0 12 2zm-1.46 6.12L6 14h4v6l5.54-5.88H12v-6z" />
   </svg>
 );
+
+export { ShieldIcon, BeakerIcon } from './icons/TabIcons';

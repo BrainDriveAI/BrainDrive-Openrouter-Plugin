@@ -9,5 +9,6 @@ export { default as SettingsExample } from './SettingsExample';
 // Export error handling types
 export type { ErrorInfo } from './ErrorDisplay';
 
-// TODO: Export your custom components
-// export { default as YourCustomComponent } from './YourCustomComponent';
+export { ModelSelector } from './ModelSelector';
+export { ModelTester } from './ModelTester';
+export { TestResults } from './TestResults';

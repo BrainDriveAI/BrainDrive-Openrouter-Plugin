@@ -1,6 +1,6 @@
 {
 	"name": "braindrive-openrouter-plugin",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "BrainDrive OpenRouter Plugin - Manage OpenRouter API keys for AI model access",
 	"main": "index.js",
 	"scripts": {

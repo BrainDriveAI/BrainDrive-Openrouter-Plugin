@@ -1,6 +1,12 @@
 import React from 'react';
 import './ComponentOpenRouterKeys.css';
 import { KeyIcon, EyeIcon, EyeOffIcon, SaveIcon, InfoIcon, CheckIcon, ClearIcon, TestConnectionIcon } from './icons';
+import { ModelSelector } from './components/ModelSelector';
+import { ModelTester } from './components/ModelTester';
+import { TestResults } from './components/TestResults';
+import { ModelInfo, ModelTestResult } from './types/models';
+import { createOpenRouterService, OpenRouterService } from './services/openRouterService';
+import { clearModelCache } from './utils/modelUtils';
 
 // Minimal service interfaces to align with Service Bridge patterns
 interface ApiService {
@@ -48,6 +54,15 @@ interface ComponentOpenRouterKeysState {
   showTooltip: boolean;
   hasUnsavedChanges: boolean;
   tooltipPosition: { top: number; left: number } | null;
+  activeTab: 'api-key' | 'model-testing';
+  modelsLoaded: boolean;
+  modelsLoading: boolean;
+  availableModels: ModelInfo[];
+  modelSearchTerm: string;
+  selectedModelId: string | null;
+  modelTestResults: ModelTestResult[];
+  modelTabError: string | null;
+  isModelTesting: boolean;
 }
 
 // OpenRouter Settings Configuration
@@ -82,12 +97,14 @@ class ComponentOpenRouterKeys extends React.Component<
   ComponentOpenRouterKeysProps,
   ComponentOpenRouterKeysState
 > {
+  private openRouterService: OpenRouterService;
   private settingsUnsubscribe?: () => void;
   private themeChangeListener: ((theme: string) => void) | null = null;
   private infoIconRef = React.createRef<HTMLDivElement>();
 
   constructor(props: ComponentOpenRouterKeysProps) {
     super(props);
+    this.openRouterService = createOpenRouterService(this.props.services?.api);
     this.state = {
       apiKey: '',
       savedApiKey: '',
@@ -102,7 +119,16 @@ class ComponentOpenRouterKeys extends React.Component<
       currentTheme: 'dark',
       showTooltip: false,
       hasUnsavedChanges: false,
-      tooltipPosition: null
+      tooltipPosition: null,
+      activeTab: 'api-key',
+      modelsLoaded: false,
+      modelsLoading: false,
+      availableModels: [],
+      modelSearchTerm: '',
+      selectedModelId: null,
+      modelTestResults: [],
+      modelTabError: null,
+      isModelTesting: false
     };
   }
 
@@ -113,6 +139,33 @@ class ComponentOpenRouterKeys extends React.Component<
     await this.initializeSettingsDefinition();
     this.initializeSettingsSubscription();
     await this.loadApiKeyStatus();
+  }
+
+  async componentDidUpdate(
+    prevProps: ComponentOpenRouterKeysProps,
+    prevState: ComponentOpenRouterKeysState
+  ) {
+    if (this.props.services?.api !== prevProps.services?.api) {
+      this.openRouterService = createOpenRouterService(this.props.services?.api);
+    }
+
+    if (this.state.savedApiKey !== prevState.savedApiKey) {
+      clearModelCache();
+
+      if (!this.state.savedApiKey) {
+        this.setState({
+          activeTab: 'api-key',
+          modelsLoaded: false,
+          availableModels: [],
+          selectedModelId: null,
+          modelTestResults: [],
+          modelTabError: null
+        });
+      } else if (prevState.savedApiKey !== this.state.savedApiKey && this.state.activeTab === 'model-testing') {
+        // API key changed while on model testing tab, refresh models.
+        this.ensureModelsLoaded(true);
+      }
+    }
   }
 
   componentWillUnmount() {
@@ -309,6 +362,165 @@ class ComponentOpenRouterKeys extends React.Component<
     });
   };
 
+  private handleTabChange = (tab: 'api-key' | 'model-testing') => {
+    if (tab === this.state.activeTab) {
+      return;
+    }
+
+    if (tab === 'model-testing' && !this.state.savedApiKey) {
+      this.setState({
+        modelTabError: 'Save a valid OpenRouter API key to enable model testing.'
+      });
+      return;
+    }
+
+    this.setState({ activeTab: tab }, () => {
+      if (tab === 'model-testing' && !this.state.modelsLoaded) {
+        this.ensureModelsLoaded();
+      }
+    });
+  };
+
+  private handleTabsKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') {
+      return;
+    }
+
+    event.preventDefault();
+    const { activeTab, savedApiKey } = this.state;
+    const tabs: Array<'api-key' | 'model-testing'> = ['api-key', 'model-testing'];
+    const currentIndex = tabs.indexOf(activeTab);
+    const increment = event.key === 'ArrowRight' ? 1 : -1;
+    let nextIndex = (currentIndex + increment + tabs.length) % tabs.length;
+    const nextTab = tabs[nextIndex];
+
+    if (nextTab === 'model-testing' && !savedApiKey) {
+      return;
+    }
+
+    this.handleTabChange(nextTab);
+  };
+
+  private handleModelSearchTermChange = (value: string) => {
+    this.setState({ modelSearchTerm: value });
+  };
+
+  private handleModelSelect = (modelId: string) => {
+    this.setState({ selectedModelId: modelId || null });
+  };
+
+  private handleClearTestHistory = () => {
+    this.setState({ modelTestResults: [] });
+  };
+
+  private handleRefreshModels = () => {
+    this.ensureModelsLoaded(true);
+  };
+
+  private ensureModelsLoaded = async (forceRefresh: boolean = false) => {
+    if (this.state.modelsLoading) {
+      return;
+    }
+
+    if (!this.state.savedApiKey) {
+      this.setState({
+        modelsLoaded: false,
+        availableModels: [],
+        modelTabError: 'Save a valid OpenRouter API key to load models.'
+      });
+      return;
+    }
+
+    this.setState({
+      modelsLoading: true,
+      modelTabError: null
+    });
+
+    try {
+      const models = await this.openRouterService.fetchModels({ forceRefresh });
+      this.setState((prevState) => {
+        const currentSelectionStillExists = prevState.selectedModelId
+          ? models.some((model) => model.id === prevState.selectedModelId)
+          : false;
+
+        return {
+          availableModels: models,
+          modelsLoaded: true,
+          modelsLoading: false,
+          modelTabError: null,
+          selectedModelId: currentSelectionStillExists
+            ? prevState.selectedModelId
+            : models.length > 0
+              ? models[0].id
+              : null
+        };
+      });
+    } catch (error: any) {
+      const message = error?.message || 'Failed to load available models';
+      this.setState({
+        modelsLoading: false,
+        modelTabError: message,
+        modelsLoaded: false
+      });
+    }
+  };
+
+  private handleTestModel = async () => {
+    const { selectedModelId, isModelTesting, availableModels } = this.state;
+
+    if (!selectedModelId || isModelTesting) {
+      return;
+    }
+
+    const selectedModel =
+      availableModels.find((model) => model.id === selectedModelId) || null;
+
+    if (!selectedModel) {
+      this.setState({
+        modelTabError: 'Select a model to test.',
+        isModelTesting: false
+      });
+      return;
+    }
+
+    this.setState({
+      isModelTesting: true,
+      modelTabError: null
+    });
+
+    try {
+      const result = await this.openRouterService.testModelAvailability(
+        selectedModel.id,
+        availableModels
+      );
+
+      this.setState((prevState) => ({
+        modelTestResults: [result, ...prevState.modelTestResults].slice(0, 10),
+        isModelTesting: false
+      }));
+    } catch (error: any) {
+      const message = error?.message || 'Failed to verify model availability.';
+      const fallbackResult: ModelTestResult = {
+        id: `${selectedModel.id}-${Date.now()}`,
+        modelId: selectedModel.id,
+        modelName: selectedModel.name,
+        status: 'unknown',
+        timestamp: Date.now(),
+        message: 'Could not confirm model availability.',
+        details: message
+      };
+
+      this.setState((prevState) => ({
+        modelTestResults: [fallbackResult, ...prevState.modelTestResults].slice(
+          0,
+          10
+        ),
+        isModelTesting: false,
+        modelTabError: message
+      }));
+    }
+  };
+
   private validateApiKey = (apiKey: string): { isValid: boolean; error?: string } => {
     if (apiKey && !apiKey.startsWith('sk-or-')) {
       return { isValid: false, error: 'API key must start with "sk-or-"' };
@@ -323,7 +535,21 @@ class ComponentOpenRouterKeys extends React.Component<
 
   private saveApiKey = async () => {
     const { apiKey } = this.state;
-    
+    const previousSavedKey = this.state.savedApiKey;
+    const keyChanged = apiKey !== previousSavedKey;
+    const applyKeyReset = () => {
+      if (!keyChanged) {
+        return;
+      }
+      this.setState({
+        modelsLoaded: false,
+        availableModels: [],
+        selectedModelId: null,
+        modelTestResults: [],
+        modelTabError: null
+      });
+    };
+
     if (apiKey) {
       const validation = this.validateApiKey(apiKey);
       if (!validation.isValid) {
@@ -344,14 +570,17 @@ class ComponentOpenRouterKeys extends React.Component<
       // Prefer API save first to update the existing instance instead of creating duplicates
       if (this.props.services?.api?.post) {
         await this.saveSettingsToAPI(settingValue);
-        this.setState({
-          success: apiKey ? 'API key saved successfully' : 'API key removed',
-          savedApiKey: apiKey,
-          isSaving: false,
-          hasUnsavedChanges: false,
-          testResult: null,
-          testError: null
-        });
+        this.setState(
+          {
+            success: apiKey ? 'API key saved successfully' : 'API key removed',
+            savedApiKey: apiKey,
+            isSaving: false,
+            hasUnsavedChanges: false,
+            testResult: null,
+            testError: null
+          },
+          () => applyKeyReset()
+        );
         setTimeout(() => this.setState({ success: null }), 3000);
         return;
       }
@@ -363,14 +592,17 @@ class ComponentOpenRouterKeys extends React.Component<
           settingValue,
           { userId: 'current' }
         );
-        this.setState({
-          success: apiKey ? 'API key saved successfully' : 'API key removed',
-          savedApiKey: apiKey,
-          isSaving: false,
-          hasUnsavedChanges: false,
-          testResult: null,
-          testError: null
-        });
+        this.setState(
+          {
+            success: apiKey ? 'API key saved successfully' : 'API key removed',
+            savedApiKey: apiKey,
+            isSaving: false,
+            hasUnsavedChanges: false,
+            testResult: null,
+            testError: null
+          },
+          () => applyKeyReset()
+        );
         setTimeout(() => this.setState({ success: null }), 3000);
         return;
       }
@@ -607,11 +839,10 @@ class ComponentOpenRouterKeys extends React.Component<
     });
   };
 
-  render() {
+  private renderApiKeyTab() {
     const {
       apiKey,
       savedApiKey,
-      isLoading,
       error,
       success,
       testResult,
@@ -619,7 +850,6 @@ class ComponentOpenRouterKeys extends React.Component<
       isKeyVisible,
       isSaving,
       isTesting,
-      currentTheme,
       showTooltip,
       hasUnsavedChanges,
       tooltipPosition
@@ -629,19 +859,8 @@ class ComponentOpenRouterKeys extends React.Component<
     const combinedError = error || testError;
     const combinedSuccess = testResult || success;
 
-    if (isLoading) {
-      return (
-        <div className={`openrouter-container ${currentTheme}-theme`}>
-          <div className="openrouter-loading">
-            <div className="openrouter-spinner"></div>
-            <span>Loading settings...</span>
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className={`openrouter-container ${currentTheme}-theme`}>
+      <>
         <div className="openrouter-setting-card">
           <div className="openrouter-card-content">
             <div className="openrouter-card-left">
@@ -768,6 +987,171 @@ Copy the key and paste it here`}
             <span>{combinedSuccess}</span>
           </div>
         )}
+      </>
+    );
+  }
+
+  private renderModelTestingTab() {
+    const {
+      availableModels,
+      modelSearchTerm,
+      modelsLoading,
+      selectedModelId,
+      modelTestResults,
+      modelTabError,
+      isModelTesting,
+      savedApiKey
+    } = this.state;
+
+    const normalizedSearch = modelSearchTerm.trim().toLowerCase();
+    const filteredModels = normalizedSearch
+      ? availableModels.filter((model) => {
+          const haystack = [
+            model.name,
+            model.id,
+            model.provider,
+            model.ownedBy,
+            model.description
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return haystack.includes(normalizedSearch);
+        })
+      : availableModels;
+
+    const selectedModel =
+      availableModels.find((model) => model.id === selectedModelId) || null;
+
+    const isTestingDisabled = !savedApiKey || !availableModels.length || modelsLoading;
+
+    return (
+      <div className="openrouter-model-testing-tab">
+        <div className="openrouter-model-testing-header">
+          <div>
+            <h3>Model Testing</h3>
+            <p>
+              Validate OpenRouter model availability without sending billable
+              inference requests.
+            </p>
+          </div>
+          <div className="openrouter-model-testing-actions">
+            <button
+              type="button"
+              className="openrouter-refresh-button"
+              onClick={this.handleRefreshModels}
+              disabled={modelsLoading || !savedApiKey}
+            >
+              {modelsLoading ? 'Refreshing…' : 'Refresh models'}
+            </button>
+          </div>
+        </div>
+
+        {!savedApiKey && (
+          <div className="openrouter-alert info">
+            Save a valid OpenRouter API key in the first tab to enable model
+            testing.
+          </div>
+        )}
+
+        <ModelSelector
+          models={filteredModels}
+          selectedModel={selectedModelId}
+          searchTerm={modelSearchTerm}
+          onSearchTermChange={this.handleModelSearchTermChange}
+          onModelSelect={this.handleModelSelect}
+          isLoading={modelsLoading}
+          disabled={!savedApiKey}
+        />
+
+        {modelTabError && (
+          <div className="openrouter-alert error">
+            <span>{modelTabError}</span>
+          </div>
+        )}
+
+        <ModelTester
+          selectedModel={selectedModel}
+          onTestModel={this.handleTestModel}
+          isTesting={isModelTesting}
+          disabled={isTestingDisabled}
+        />
+
+        <TestResults
+          results={modelTestResults}
+          onClearHistory={this.handleClearTestHistory}
+        />
+      </div>
+    );
+  }
+
+  render() {
+    const { isLoading, currentTheme, activeTab, savedApiKey } = this.state;
+
+    const containerClassName = `openrouter-container ${currentTheme}-theme`;
+
+    if (isLoading) {
+      return (
+        <div className={containerClassName}>
+          <div className="openrouter-loading">
+            <div className="openrouter-spinner"></div>
+            <span>Loading settings...</span>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className={containerClassName}>
+        <div
+          className="openrouter-tabs"
+          role="tablist"
+          aria-label="OpenRouter plugin navigation"
+          onKeyDown={this.handleTabsKeyDown}
+        >
+          <button
+            type="button"
+            role="tab"
+            id="openrouter-api-key-tab"
+            aria-controls="openrouter-api-key-panel"
+            aria-selected={activeTab === 'api-key'}
+            className={`openrouter-tab ${activeTab === 'api-key' ? 'active' : ''}`}
+            onClick={() => this.handleTabChange('api-key')}
+          >
+            API Key Setup
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="openrouter-model-testing-tab"
+            aria-controls="openrouter-model-testing-panel"
+            aria-selected={activeTab === 'model-testing'}
+            aria-disabled={!savedApiKey}
+            className={`openrouter-tab ${activeTab === 'model-testing' ? 'active' : ''}`}
+            onClick={() => this.handleTabChange('model-testing')}
+            disabled={!savedApiKey}
+          >
+            Model Testing
+          </button>
+        </div>
+        <div className="openrouter-tab-content">
+          <div
+            role="tabpanel"
+            id="openrouter-api-key-panel"
+            aria-labelledby="openrouter-api-key-tab"
+            hidden={activeTab !== 'api-key'}
+          >
+            {this.renderApiKeyTab()}
+          </div>
+          <div
+            role="tabpanel"
+            id="openrouter-model-testing-panel"
+            aria-labelledby="openrouter-model-testing-tab"
+            hidden={activeTab !== 'model-testing'}
+          >
+            {this.renderModelTestingTab()}
+          </div>
+        </div>
       </div>
     );
   }
